@@ -8,10 +8,10 @@ A highly optimized, hardware-aware implementation of the Stable Diffusion v1-5 i
 
 Standard Latent Diffusion pipelines demand a monolithic memory allocation, resulting in immediate Out-Of-Memory (OOM) failures on low-tier GPUs. This engine implements a system-level memory hierarchy rewrite to bypass the VRAM ceiling:
 
-* **Asynchronous Model Demand-Paging (CPU Offloading):** Transitions execution away from global GPU residency. Sub-component weight subgraphs (Text Encoder, UNet, VAE) are kept in system host memory and asynchronously paged onto the GPU core strictly on demand, evicting inactive modules dynamically.
-* **Sequential Attention Slicing:** Mitigates the quadratic memory overhead ($O(N^2)$) of vanilla self-attention matrices. The engine chunks cross-attention dot-product sequences into sequential localized computations, dramatically reducing peak tensor activation spikes.
-* **Spatial VAE Tiling/Slicing:** Circumvents the heavy memory rush encountered during the final latent-to-pixel space reconstruction phase. Large latent feature maps are processed via split overlapping tiles and seamlessly reconstructed post-inference.
-* **Mixed-Precision Execution:** Enforces an explicit `float16` half-precision compute graph, halving the structural memory size of execution tensors while maintaining inference fidelity.
+* **Asynchronous Model Demand-Paging (CPU Offloading):** Sub-components (Text Encoder, UNet, VAE) stay in system RAM and are paged onto the GPU only when executing, dynamically evicting inactive blocks.
+* **Sequential Attention Slicing:** Splits quadratic self-attention matrices into smaller, localized sequential computations to flatten activation spikes.
+* **Spatial VAE Tiling/Slicing:** Segments large latent feature maps into overlapping spatial patches during the final decoding phase to bypass structural reconstruction bottlenecks.
+* **Mixed-Precision Execution:** Enforces a strict `float16` execution graph, cutting core tensor memory in half.
 
 ---
 
@@ -22,37 +22,29 @@ Standard Latent Diffusion pipelines demand a monolithic memory allocation, resul
 * **Compute Backend:** PyTorch CUDA 12.x / FP16 Precision
 * **Base Architecture:** RunwayML Stable Diffusion v1-5
 
-| Pipeline Configuration | Peak VRAM Consumption | Execution Status | Resume Metric Impact |
+| Pipeline Configuration | Peak VRAM Consumption | Execution Status | Result |
 | :--- | :--- | :--- | :--- |
-| **Baseline (FP32, Monolithic)** | > 8.4 GB | FAILED (CUDA OOM) | Baseline Metric Point |
-| **Mid-Tier (FP16 only)** | > 4.2 GB | FAILED (VAE Decode OOM) | Peak Spike Bottleneck |
+| **Baseline (FP32, Monolithic)** | > 8.4 GB | FAILED (CUDA OOM) | Instant CUDA OOM on initialization |
+| **Mid-Tier (FP16 only)** | > 4.2 GB | FAILED (VAE Decode OOM) | Crashed during VAE reconstruction |
 | **OptiDiff Engine (Ours)** | **1979.17 MB** | Stable / Success | **54% VRAM Footprint Reduction** |
 
 ---
 
 ## Trade-offs 
-
-### **Pros**
-* **Zero Output Degradation:** Enforcing FP16 precision, attention slicing, and VAE tiling reduces memory overhead without modifying the actual mathematical weights of the underlying models. The output image quality remains structurally identical to unoptimized runs on enterprise hardware.
-* **Bypasses the Hardware Ceiling:** It completely eliminates the hard VRAM ceiling. Instead of requiring a costly GPU upgrade, your effective memory pool scales up to your system's host RAM, making it impossible to OOM during standard generation sizes.
-
-### **Cons**
-* **The Compute-Latency Tax:** Because the GPU is no longer keeping the full model in memory, it must wait for chunks of the model to be paged over the PCIe bus from system RAM at every denoising step, increasing overall generation time.
-* **CPU/Bus Dependencies:** Inference speeds become heavily bound to the host system memory bus bandwidth (DDR4/DDR5 clock speeds) during sequential tensor handoffs.
-
+Bypassing hardware ceilings removes the need for expensive upgrades, but staging tensors over the PCIe bus introduces a compute-latency tax that increases overall generation time.
 ---
 
-## Project Structure & Execution
+## Project Structure
 
 ```text
 ├── local_model/         # Standalone weights (.safetensors)
 ├── outputs/             # Runtime destination folder for generated outputs
 ├── src/
 │   ├── benchmark.py     # Hardware profiling framework calculating VRAM performance metrics
-│   └── generate.py      # Fully interactive Terminal CLI for dynamic user generation loops
+│   └── generate.py      # Change user_prompt here to check results
 ├── .gitignore           # Filter protecting tracking history against large model weights
 └── README.md
-
+```
 ## Wanna try?
 
 # 1. Install dependencies
@@ -62,7 +54,7 @@ pip install torch diffusers transformers accelerate omegaconf
 mkdir -p local_model
 curl -L -o local_model/v1-5-pruned-emaonly.safetensors [https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors](https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors)
 
-# 3. Prove the numbers yourself
+# 3. Check them numbers yourself
 python src/benchmark.py
 
 # 4. Start prompting directly in your terminal!
