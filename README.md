@@ -46,7 +46,7 @@ Bypassing hardware ceilings removes the need for expensive upgrades, but staging
 └── README.md
 ```
 ## Wanna try?
-
+```
 # 1. Install dependencies
 pip install torch diffusers transformers accelerate omegaconf
 
@@ -59,3 +59,4 @@ python src/benchmark.py
 
 # 4. Start prompting directly in your terminal!
 python src/generate.py
+```
