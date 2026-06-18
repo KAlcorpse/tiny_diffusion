@@ -1,4 +1,5 @@
 # tiny-diffusion: Latent Diffusion Engine for Resource-Constrained Environments
+Kalyan S, ED23B051
 
 A highly optimized, hardware-aware implementation of the Stable Diffusion v1-5 inference pipeline in PyTorch. This project focuses on decoupling massive generative model graphs from physical VRAM constraints, enabling full-resolution ($512\times512$) image synthesis on entry-level consumer hardware (4GB VRAM) without compromising output mathematical accuracy.
 
